@@ -1,0 +1,460 @@
+#!/bin/bash
+set -euo pipefail
+
+exibir_ajuda() {
+
+	if [[ "${LANG:-}" =~ ^pt ]]; then
+        echo "Uso: startcpp <nome_do_projeto> [flags]"
+        echo ""
+        echo "Flags:"
+        echo "  --sdl2      Configura projeto com suporte a SDL2 (Local/CPM)"
+        echo "  --sdl3      Configura projeto com suporte a SDL3 (Local/CPM)"
+        echo "  --raylib    Configura projeto com suporte a Raylib (Local/CPM)"
+        echo "  --list      Lista as flags suportadas"
+    else
+        echo "Usage: startcpp <project_name> [flags]"
+        echo ""
+        echo "Flags:"
+        echo "  --sdl2      Configure project with SDL2 support (Local/CPM)"
+        echo "  --sdl3      Configure project with SDL3 support (Local/CPM)"
+        echo "  --raylib    Configure project with Raylib support (Local/CPM)"
+        echo "  --list      List supported flags"
+    fi
+}
+
+NOME_PROJETO=""
+TEMPLATE="default"
+
+if [ $# -eq 0 ]; then
+    exibir_ajuda
+    exit 1
+fi
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --list)
+            exibir_ajuda
+            exit 0
+            ;;
+        --sdl2)
+            TEMPLATE="sdl2"
+            shift
+            ;;
+        --sdl3)
+            TEMPLATE="sdl3"
+            shift
+            ;;
+        --raylib)
+            TEMPLATE="raylib"
+            shift
+            ;;
+        -*)
+            echo "Erro: Flag desconhecida '$1'"
+            exibir_ajuda
+            exit 1
+            ;;
+        *)
+            NOME_PROJETO="$1"
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$NOME_PROJETO" ]; then
+    echo "Erro: Nome do projeto nao especificado."
+    exibir_ajuda
+    exit 1
+fi
+
+mkdir -p "$NOME_PROJETO"
+cd "$NOME_PROJETO"
+mkdir -p src include logs
+
+# 1. Log Module
+cat << 'EOF' > include/Log.cppm
+module;
+
+#include <print>
+#include <string_view>
+#include <source_location>
+#include <fstream>
+#include <chrono>
+#include <format>
+#include <filesystem>
+
+export module Log;
+
+export namespace Log {
+    
+    enum class Color {
+        Red,
+        Yellow,
+        Cyan,
+        Reset
+    };
+
+    std::string_view color_to_string(Color c) {
+        switch (c) {
+            case Color::Red:    return "\033[1;31m";
+            case Color::Yellow: return "\033[1;33m";
+            case Color::Cyan:   return "\033[1;36m";
+            case Color::Reset:  return "\033[0m";
+        }
+        return "";
+    }
+
+    void write_to_disk(std::string_view level, std::string_view message, const std::source_location& location) {
+        try {
+            std::filesystem::create_directories("logs");
+            auto now = std::chrono::system_clock::now();
+            std::string filename = std::format("logs/{:%Y-%m-%d_%H-%M-%S}.log", now);
+            
+            std::ofstream log_file(filename, std::ios::app);
+            if (log_file.is_open()) {
+                std::print(log_file, "[{}] {}\n  └─ At: {}:{}:{} in {}\n", 
+                           level, message, location.file_name(), location.line(), location.column(), location.function_name());
+            }
+        } catch (...) {}
+    }
+
+    void error(std::string_view message, bool save_to_file = false, 
+               const std::source_location location = std::source_location::current()) {
+        std::print("{}[ERROR] {}{} \n", color_to_string(Color::Red), message, color_to_string(Color::Reset));
+        std::print("  └─ At: {}:{}:{} in {}\n", location.file_name(), location.line(), location.column(), location.function_name());
+        if (save_to_file) write_to_disk("ERROR", message, location);
+    }
+
+    void info(std::string_view message, bool save_to_file = false,
+              const std::source_location location = std::source_location::current()) {
+        std::print("{}[INFO]{} {}\n", color_to_string(Color::Cyan), color_to_string(Color::Reset), message);
+        if (save_to_file) write_to_disk("INFO", message, location);
+    }
+
+    void warn(std::string_view message, bool save_to_file = false,
+              const std::source_location location = std::source_location::current()) {
+        std::print("{}[WARN]{} {}\n", color_to_string(Color::Yellow), color_to_string(Color::Reset), message);
+        if (save_to_file) write_to_disk("WARN", message, location);
+    }
+}
+EOF
+
+# 2. Source Templates
+DEPENDENCIAS_CMAKE=""
+LINK_LIBRARIES_CMAKE=""
+
+case "$TEMPLATE" in
+    sdl2)
+        DEPENDENCIAS_CMAKE="CPMFindPackage(
+    NAME SDL2
+    GITHUB_REPOSITORY libsdl-org/SDL
+    GIT_TAG release-2.30.3
+    FIND_PACKAGE_ARGUMENTS REQUIRED
+)"
+        LINK_LIBRARIES_CMAKE="target_link_libraries(__name__ PRIVATE SDL2::SDL2)"
+        
+        cat << 'EOF' > src/main.cpp
+#include <print>
+#include <SDL2/SDL.h>
+import Log;
+
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        Log::error("SDL2 initialization failed", true);
+        return -1;
+    }
+    Log::info("SDL2 initialized successfully");
+    
+    SDL_Window* window = SDL_CreateWindow("StartCPP SDL2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 600, SDL_WINDOW_SHOWN);
+    if (!window) {
+        Log::error("Window creation failed", true);
+        SDL_Quit();
+        return -1;
+    }
+
+    bool running = true;
+    SDL_Event event;
+    while (running) {
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) running = false;
+        }
+    }
+
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 0;
+}
+EOF
+        ;;
+
+    sdl3)
+        DEPENDENCIAS_CMAKE="CPMFindPackage(
+    NAME SDL3
+    GITHUB_REPOSITORY libsdl-org/SDL
+    GIT_TAG main
+    FIND_PACKAGE_ARGUMENTS REQUIRED
+)"
+        LINK_LIBRARIES_CMAKE="target_link_libraries(__name__ PRIVATE SDL3::SDL3)"
+        
+        cat << 'EOF' > src/main.cpp
+#define SDL_MAIN_USE_CALLBACKS 1
+#include <SDL3/SDL_main.h>
+#include <print>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+import Log;
+
+struct AppContext {
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+};
+
+SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        Log::error("SDL3 initialization failed", true);
+        return SDL_APP_FAILURE;
+    }
+    
+    AppContext* app = new AppContext();
+    *appstate = app;
+
+    if (!SDL_CreateWindowAndRenderer("StartCPP SDL3", 800, 600, SDL_WINDOW_HIGH_PIXEL_DENSITY, &app->window, &app->renderer)) {
+        Log::error("Failed to create window and renderer", true);
+        return SDL_APP_FAILURE;
+    }
+
+    Log::info("SDL3 window and renderer initialized successfully");
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
+    if (event->type == SDL_EVENT_QUIT) {
+        return SDL_APP_SUCCESS;
+    }
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppIterate(void* appstate) {
+    AppContext* app = static_cast<AppContext*>(appstate);
+    
+    // Define a cor de fundo (cinza escuro) e limpa a tela
+    SDL_SetRenderDrawColor(app->renderer, 30, 30, 32, 255);
+    SDL_RenderClear(app->renderer);
+    
+    // Apresenta o frame renderizado na janela
+    SDL_RenderPresent(app->renderer);
+    
+    return SDL_APP_CONTINUE; 
+}
+
+void SDL_AppQuit(void* appstate, SDL_AppResult result) {
+    SDL_Quit();
+
+    if (appstate) {
+        AppContext* app = static_cast<AppContext*>(appstate);
+        SDL_DestroyRenderer(app->renderer);
+        SDL_DestroyWindow(app->window);
+        delete app;
+    }
+    SDL_Quit();
+    Log::info("SDL3 shutdown complete");
+}
+EOF
+        ;;
+
+raylib)
+        DEPENDENCIAS_CMAKE="find_package(raylib QUIET)
+if(NOT raylib_FOUND)
+    CPMAddPackage(
+        NAME raylib
+        GITHUB_REPOSITORY raysan5/raylib
+        GIT_TAG 5.0
+        OPTIONS \"BUILD_EXAMPLES OFF\"
+    )
+endif()"
+        LINK_LIBRARIES_CMAKE="target_link_libraries(__name__ PRIVATE raylib)"
+        
+        cat << 'EOF' > src/main.cpp
+#include <print>
+#include "raylib.h"
+import Log;
+
+int main() {
+    Log::info("Initializing Raylib window...");
+    InitWindow(800, 600, "StartCPP Raylib");
+    SetTargetFPS(60);
+
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+        DrawText("Raylib window active", 190, 200, 20, LIGHTGRAY);
+        EndDrawing();
+    }
+    CloseWindow();
+    return 0;
+}
+EOF
+        ;;
+    *)
+        cat << 'EOF' > src/main.cpp
+#include <print>
+import Log;
+
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
+    std::println("Hello, World!");
+    Log::info("System ready");
+    return 0;
+}
+EOF
+        ;;
+esac
+
+# 3. CMakeLists Generation
+
+# ==============================================================================
+# 3. ESCRITA DO CMAKE_LISTS.TXT (CCache + Inicializador Automático do CPM)
+# ==============================================================================
+cat << EOF > CMakeLists.txt
+cmake_minimum_required(VERSION 3.28)
+
+# Forca o CMake moderno a aceitar a politica defasada da Raylib
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+project(__NAME__ 
+    VERSION 1.0 
+    LANGUAGES CXX
+)
+
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "\${CCACHE_PROGRAM}")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK "\${CCACHE_PROGRAM}")
+endif()
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
+
+if(MSVC)
+    add_compile_options(/W4 /permissive-)
+else()
+    add_compile_options(
+        -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor 
+        -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual 
+        -Wconversion -Wsign-conversion -Wnull-dereference -Wformat=2
+    )
+endif()
+
+# Desativa o modo mudo do FetchContent para o usuario ver o git clone do CPM
+set(FETCHCONTENT_QUIET OFF)
+
+if(NOT "\$DEPENDENCIAS_CMAKE" STREQUAL "")
+    set(CPM_DOWNLOAD_VERSION 0.40.2)
+    if(NOT EXISTS "\${CMAKE_BINARY_DIR}/cmake/CPM_\${CPM_DOWNLOAD_VERSION}.cmake")
+        file(DOWNLOAD
+            "https://github.com/cpm-cmake/CPM.cmake/releases/download/v\${CPM_DOWNLOAD_VERSION}/CPM.cmake"
+            "\${CMAKE_BINARY_DIR}/cmake/CPM_\${CPM_DOWNLOAD_VERSION}.cmake"
+        )
+    endif()
+    include("\${CMAKE_BINARY_DIR}/cmake/CPM_\${CPM_DOWNLOAD_VERSION}.cmake")
+endif()
+
+$DEPENDENCIAS_CMAKE
+
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
+file(GLOB_RECURSE MODULES CONFIGURE_DEPENDS "include/*.cppm" "src/*.cppm")
+
+add_executable(__name__ \${SOURCES})
+
+target_sources(__name__
+    PUBLIC
+        FILE_SET CXX_MODULES FILES \${MODULES}
+)
+
+target_include_directories(__name__ 
+    PRIVATE 
+        \${CMAKE_CURRENT_SOURCE_DIR}/include
+        \${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+$LINK_LIBRARIES_CMAKE
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(__name__ PRIVATE -g -O0)
+    target_compile_options(__name__ PRIVATE -fsanitize=address -fsanitize=undefined)
+    target_link_options(__name__ PRIVATE -fsanitize=address -fsanitize=undefined)
+else()
+    target_compile_options(__name__ PRIVATE -O3 -march=native)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ipo_supported OUTPUT error)
+    if(ipo_supported)
+        set_target_properties(__name__ PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+endif()
+
+target_compile_definitions(__name__ PRIVATE
+    PROJECT_NAME="\${PROJECT_NAME}"
+    PROJECT_VERSION="\${PROJECT_VERSION}"
+)
+EOF
+
+sed -i "s/__NAME__/$NOME_PROJETO/g" CMakeLists.txt
+sed -i "s/__name__/$NOME_PROJETO/g" CMakeLists.txt
+
+# 4. Config Files
+cat << 'EOF' > .gitignore
+build/
+out/
+bin/
+CMakeFiles/
+logs/
+.vscode/
+.idea/
+*.swp
+*.swo
+.cache/
+compile_commands.json
+EOF
+
+cat << 'EOF' > .gitattributes
+CMakeLists.txt linguist-vendored
+*.cmake linguist-vendored
+.clang-format linguist-documentation
+include/Log.cppm linguist-detectable=true
+EOF
+
+cat << 'EOF' > .clang-format
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+AllowShortFunctionsOnASingleLine: All
+AllowShortBlocksOnASingleLine: Always
+AllowShortLambdasOnASingleLine: All
+AllowShortEnumsOnASingleLine: false
+IndentCaseLabels: true
+AlignAfterOpenBracket: Align
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterStruct: true
+  AfterFunction: true
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterNamespace: false
+  AfterUnion: false
+  BeforeElse: false
+  BeforeCatch: false
+EOF
+
+# 5. Build Pipeline
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
+cmake --build build
+ln -sf ./build/compile_commands.json .
+
+echo "Project '$NOME_PROJETO' initialized with template [$TEMPLATE]"
