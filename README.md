@@ -6,6 +6,10 @@ It takes care of the boring first steps for you: it creates the project layout, 
 
 ---
 
+https://github.com/user-attachments/assets/20dd9a6a-d893-4e2a-8480-43ab5aaa164c
+
+---
+
 ## What it creates
 
 - A **C++23** project
