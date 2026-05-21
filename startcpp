@@ -22,6 +22,12 @@ exibir_ajuda() {
     fi
 }
 
+
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
 NOME_PROJETO=""
 TEMPLATE="default"
 
@@ -457,4 +463,14 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang
 cmake --build build
 ln -sf ./build/compile_commands.json .
 
-echo "Project '$NOME_PROJETO' initialized with template [$TEMPLATE]"
+if [[ "$LANG" == pt_BR* ]]; then
+    	echo -e "\n${BLUE}[*] Inicializando controle de versão...${NC}"
+else
+    	echo -e "\n${BLUE}[*] Initializing version control...${NC}"
+fi
+
+git init -b main
+git add .
+git commit -m "chore: initial project scaffolding via startcpp"
+
+echo -e "${GREEN}Project '$NOME_PROJETO' initialized with template [$TEMPLATE]${NC}"
