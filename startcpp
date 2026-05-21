@@ -1,32 +1,58 @@
 #!/bin/bash
 set -euo pipefail
 
-exibir_ajuda() {
-
-	if [[ "${LANG:-}" =~ ^pt ]]; then
-        echo "Uso: startcpp <nome_do_projeto> [flags]"
-        echo ""
-        echo "Flags:"
-        echo "  --sdl2      Configura projeto com suporte a SDL2 (Local/CPM)"
-        echo "  --sdl3      Configura projeto com suporte a SDL3 (Local/CPM)"
-        echo "  --raylib    Configura projeto com suporte a Raylib (Local/CPM)"
-        echo "  --list      Lista as flags suportadas"
-    else
-        echo "Usage: startcpp <project_name> [flags]"
-        echo ""
-        echo "Flags:"
-        echo "  --sdl2      Configure project with SDL2 support (Local/CPM)"
-        echo "  --sdl3      Configure project with SDL3 support (Local/CPM)"
-        echo "  --raylib    Configure project with Raylib support (Local/CPM)"
-        echo "  --list      List supported flags"
-    fi
-}
-
-
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
+
+DEPS=("cmake" "ninja" "clang++" "git")
+
+for DEP in "${DEPS[@]}"; do
+    if ! command -v "$DEP" &> /dev/null; then
+        echo -e "${RED}[ERROR] Dependência crítica não encontrada: $DEP${NC}"
+        echo -e "Instale o '$DEP' através do gerenciador de pacotes do seu sistema antes de continuar."
+        exit 1
+    fi
+done
+
+if [[ "$LANG" == pt_BR* ]]; then
+    echo -e "${GREEN}[+] Dependências validadas. Preparando terreno...${NC}\n"
+else
+    echo -e "${GREEN}[+] Dependencies validated. Preparing environment...${NC}\n"
+fi
+
+exibir_ajuda() {
+    if [[ "$LANG" == pt_BR* ]]; then
+        echo -e "${BLUE}Uso:${NC} startcpp <nome_do_projeto> [opções]"
+        echo -e ""
+        echo -e "${GREEN}Opções de Ecossistema:${NC}"
+        echo -e "  (nenhuma flag)    Projeto C++23 puro (CLI padrão)"
+        echo -e "  --sdl2            Template gráfico clássico (SDL2)"
+        echo -e "  --sdl3            Template assíncrono moderno (SDL3)"
+        echo -e "  --raylib          Template de janela e contexto 3D/2D (Raylib)"
+        echo -e ""
+        echo -e "${GREEN}Exemplos:${NC}"
+        echo -e "  startcpp engine --sdl3"
+        echo -e "  startcpp snake --raylib"
+    else
+        echo -e "${BLUE}Usage:${NC} startcpp <project_name> [options]"
+        echo -e ""
+        echo -e "${GREEN}Ecosystem Options:${NC}"
+        echo -e "  (no flag)         Pure C++23 Project (Standard CLI)"
+        echo -e "  --sdl2            Classic graphics template (SDL2)"
+        echo -e "  --sdl3            Modern asynchronous template (SDL3)"
+        echo -e "  --raylib          3D/2D window and context template (Raylib)"
+        echo -e ""
+        echo -e "${GREEN}Examples:${NC}"
+        echo -e "  startcpp engine --sdl3"
+        echo -e "  startcpp snake --raylib"
+    fi
+    exit 0
+}
+
+
+
 
 NOME_PROJETO=""
 TEMPLATE="default"
@@ -38,10 +64,14 @@ fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --list)
+        --help)
             exibir_ajuda
             exit 0
             ;;
+	-h)
+	    exibir_ajuda
+	    exit 0
+	    ;;
         --sdl2)
             TEMPLATE="sdl2"
             shift
@@ -156,7 +186,7 @@ case "$TEMPLATE" in
     GIT_TAG release-2.30.3
     FIND_PACKAGE_ARGUMENTS REQUIRED
 )"
-        LINK_LIBRARIES_CMAKE="target_link_libraries(__name__ PRIVATE SDL2::SDL2)"
+        LINK_LIBRARIES_CMAKE="target_link_libraries($NOME_PROJETO PRIVATE SDL2::SDL2)"
         
         cat << 'EOF' > src/main.cpp
 #include <print>
@@ -199,7 +229,7 @@ EOF
     GIT_TAG main
     FIND_PACKAGE_ARGUMENTS REQUIRED
 )"
-        LINK_LIBRARIES_CMAKE="target_link_libraries(__name__ PRIVATE SDL3::SDL3)"
+        LINK_LIBRARIES_CMAKE="target_link_libraries($NOME_PROJETO PRIVATE SDL3::SDL3)"
         
         cat << 'EOF' > src/main.cpp
 #define SDL_MAIN_USE_CALLBACKS 1
@@ -277,7 +307,7 @@ if(NOT raylib_FOUND)
         OPTIONS \"BUILD_EXAMPLES OFF\"
     )
 endif()"
-        LINK_LIBRARIES_CMAKE="target_link_libraries(__name__ PRIVATE raylib)"
+        LINK_LIBRARIES_CMAKE="target_link_libraries($NOME_PROJETO PRIVATE raylib)"
         
         cat << 'EOF' > src/main.cpp
 #include <print>
@@ -374,14 +404,14 @@ $DEPENDENCIAS_CMAKE
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE MODULES CONFIGURE_DEPENDS "include/*.cppm" "src/*.cppm")
 
-add_executable(__name__ \${SOURCES})
+add_executable($NOME_PROJETO \${SOURCES})
 
-target_sources(__name__
+target_sources($NOME_PROJETO
     PUBLIC
         FILE_SET CXX_MODULES FILES \${MODULES}
 )
 
-target_include_directories(__name__ 
+target_include_directories($NOME_PROJETO 
     PRIVATE 
         \${CMAKE_CURRENT_SOURCE_DIR}/include
         \${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -390,26 +420,23 @@ target_include_directories(__name__
 $LINK_LIBRARIES_CMAKE
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(__name__ PRIVATE -g -O0)
-    target_compile_options(__name__ PRIVATE -fsanitize=address -fsanitize=undefined)
-    target_link_options(__name__ PRIVATE -fsanitize=address -fsanitize=undefined)
+    target_compile_options($NOME_PROJETO PRIVATE -g -O0)
+    target_compile_options($NOME_PROJETO PRIVATE -fsanitize=address -fsanitize=undefined)
+    target_link_options($NOME_PROJETO PRIVATE -fsanitize=address -fsanitize=undefined)
 else()
-    target_compile_options(__name__ PRIVATE -O3 -march=native)
+    target_compile_options($NOME_PROJETO PRIVATE -O3 -march=native)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo_supported OUTPUT error)
     if(ipo_supported)
-        set_target_properties(__name__ PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+        set_target_properties($NOME_PROJETO PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
     endif()
 endif()
 
-target_compile_definitions(__name__ PRIVATE
+target_compile_definitions($NOME_PROJETO PRIVATE
     PROJECT_NAME="\${PROJECT_NAME}"
     PROJECT_VERSION="\${PROJECT_VERSION}"
 )
 EOF
-
-sed -i "s/__NAME__/$NOME_PROJETO/g" CMakeLists.txt
-sed -i "s/__name__/$NOME_PROJETO/g" CMakeLists.txt
 
 # 4. Config Files
 cat << 'EOF' > .gitignore
@@ -435,7 +462,7 @@ EOF
 
 cat << 'EOF' > .clang-format
 BasedOnStyle: LLVM
-IndentWidth: 4
+IndentWidth: 2
 ColumnLimit: 120
 AllowShortFunctionsOnASingleLine: All
 AllowShortBlocksOnASingleLine: Always
@@ -462,6 +489,7 @@ EOF
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
 cmake --build build
 ln -sf ./build/compile_commands.json .
+
 
 if [[ "$LANG" == pt_BR* ]]; then
     	echo -e "\n${BLUE}[*] Inicializando controle de versão...${NC}"
