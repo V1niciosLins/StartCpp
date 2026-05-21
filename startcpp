@@ -59,18 +59,15 @@ TEMPLATE="default"
 
 if [ $# -eq 0 ]; then
     exibir_ajuda
-    exit 1
 fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --help)
             exibir_ajuda
-            exit 0
             ;;
 	-h)
 	    exibir_ajuda
-	    exit 0
 	    ;;
         --sdl2)
             TEMPLATE="sdl2"
@@ -87,7 +84,6 @@ while [[ $# -gt 0 ]]; do
         -*)
             echo "Erro: Flag desconhecida '$1'"
             exibir_ajuda
-            exit 1
             ;;
         *)
             NOME_PROJETO="$1"
@@ -99,7 +95,6 @@ done
 if [ -z "$NOME_PROJETO" ]; then
     echo "Erro: Nome do projeto nao especificado."
     exibir_ajuda
-    exit 1
 fi
 
 mkdir -p "$NOME_PROJETO"
